@@ -544,7 +544,7 @@ findWiredInPackages dflags pkgs = do
                   | otherwise
                   = p
 
-  return $ updateWiredInDependencies pkgs
+  return $ defaultPackageConfig {installedPackageId = InstalledPakcageId "syb-0.4.1"} : updateWiredInDependencies pkgs
 
 -- ----------------------------------------------------------------------------
 

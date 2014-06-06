@@ -543,7 +543,7 @@ jsIdIdent' i mn suffix0 = do
    since the RTS uses thins from them
 -}
 wiredInPackages :: [String]
-wiredInPackages = [ "ghcjs-prim" ]
+wiredInPackages = [ "ghcjs-prim", "syb" ]
 
 isWiredInPackage :: String -> Bool
 isWiredInPackage pkg = any (`L.isPrefixOf` pkg) wiredInPackages

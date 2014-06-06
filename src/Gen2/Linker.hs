@@ -57,8 +57,11 @@ import           Gen2.Rts                 (rtsText)
 import           Gen2.RtsTypes
 import           Gen2.Shim
 
+import Debug.Trace
+
 type LinkableUnit = (Package, Module, Int) -- module and the index of the block
 type Module       = Text
+
 
 -- number of bytes linked per module
 type LinkerStats  = Map (Package, Module) Int64
@@ -416,6 +419,7 @@ rtsDeps pkgs =
      , (ghcjsPrimPkg, "GHCJS.Prim.Internal",    "wouldBlock")
      , (ghcjsPrimPkg, "GHCJS.Prim.Internal",    "blockedIndefinitelyOnMVar")
      , (ghcjsPrimPkg, "GHCJS.Prim.Internal",    "blockedIndefinitelyOnSTM")
+     , (ghcjsPrimPkg, "GHCJS.Prim.TH",          "makeTHMain")
      ]
 
 generateBase :: FilePath -> Compactor.Base -> Set LinkableUnit

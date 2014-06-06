@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 {-
   This module takes over desugaring and typechecking foreign declarations and calls
   from GHC. foreign import javascript should be desugared differently
@@ -12,10 +13,13 @@ module Gen2.Foreign where
 import Control.Monad
 
 import Data.Maybe
-import Data.List (partition, isPrefixOf, unzip4)
+import Data.List (partition, isPrefixOf, unzip4, sort)
 
 import Hooks
 import DynFlags
+import HsTypes
+import HsExpr
+import System.IO
 
 import Id
 import OrdList
@@ -63,7 +67,25 @@ import TcRnMonad
 import TcHsType
 import Platform
 
+import Data.Monoid(mempty)
+import CoreToStg
+import CoreUtils
+import Gen2.Generator
 import Gen2.PrimIface
+import IdInfo
+import qualified Language.Haskell.TH as TH
+import TysWiredIn
+import Unsafe.Coerce
+import Var
+import CorePrep
+import Gen2.Linker
+import UniqFM
+import Packages
+import qualified Data.ByteString as BS
+import System.Process
+import Data.Generics.Text
+import Control.Applicative((<$>))
+import System.Exit
 
 type Binding = (Id, CoreExpr)
 
@@ -74,10 +96,13 @@ installForeignHooks generatingJs dflags =
       f True h  = h { dsForeignsHook       = Just ghcjsDsForeigns
                     , tcForeignImportsHook = Just ghcjsTcForeignImports
                     , tcForeignExportsHook = Just ghcjsTcForeignExports
+                    -- , runRnSpliceHook    = Just ghcjsRunRnSpliceHook
+                    , hscCompileCoreExprHook = Just ghcjsHscCompileCoreExprHook
                     }
       f False h = h { dsForeignsHook       = Just ghcjsNativeDsForeigns
                     , tcForeignImportsHook = Just ghcjsNativeTcForeignImports
                     , tcForeignExportsHook = Just ghcjsNativeTcForeignExports
+                    -- , runRnSpliceHook    = Just ghcjsRunRnSpliceHook
                     }
 {-
    desugar foreign declarations for JavaScript
@@ -871,3 +896,48 @@ check _    the_err = addErrTc the_err
 badCName :: CLabelString -> MsgDoc
 badCName target
   = sep [quotes (ppr target) <+> ptext (sLit "is not a valid C identifier")]
+
+ghcjsRunRnSpliceHook :: LHsExpr Name -> RnM (LHsExpr Name)
+ghcjsRunRnSpliceHook h = do
+  dfs <- getDynFlags
+  liftIO . printForC dfs stdout $ ppr h
+  return $ h -- (const (ExplicitTuple [] Boxed) <$> h)
+
+ghcjsHscCompileCoreExprHook :: HscEnv -> SrcSpan -> CoreExpr -> IO HValue
+ghcjsHscCompileCoreExprHook henv _ expQ = do
+  let dflags = hsc_dflags henv
+      unitType = mkTyConTy unitTyCon -- mkAppTy undefined
+      mkVar s = mkExternalName (getUnique (0 :: Int)) modul (mkVarOcc s) noSrcSpan
+      expName = mkGlobalVar VanillaId (mkVar "thExpression") (exprType expQ) vanillaIdInfo
+      coreProgram' = [NonRec expName expQ]
+      ghcjsSettings = mempty
+      modul = mkModule (stringToPackageId "th") (mkModuleName "Exp")
+  coreProgram <- corePrepPgm dflags henv coreProgram' []
+  stgBindings <- coreToStg dflags modul coreProgram
+  let object = generate ghcjsSettings dflags (CgGuts modul [] coreProgram NoStubs [] (NoHpcInfo False) emptyModBreaks) stgBindings
+      pkgIds = map packageConfigId . eltsUFM . pkgIdMap . pkgState $ dflags
+      primPkg = head . filter (isPrefixOf "ghcjs-prim-" . packageIdString) $ pkgIds
+      pkgDeps = map (\pkg -> (pkg, packageLibPaths pkg)) . nub $ primPkg : pkgIds
+      packageLibPaths pkg = maybe [] libraryDirs (lookupPackage pidMap pkg)
+      pidMap   = pkgIdMap (pkgState dflags)
+  
+      thObjectFileName = "th-object.js_o"
+  h <- openFile thObjectFileName WriteMode
+  BS.hPutStr h object
+  hClose h
+  let thExecDir = "hmm.ble"
+  link dflags ghcjsSettings thExecDir [] pkgDeps [thObjectFileName] ["th-run-main.js"] (const True)
+  (_, _, Just h, nodeP) <- createProcess (proc "node" [thExecDir ++ "/all.js"]) {std_err = CreatePipe}
+  exitCode <- waitForProcess nodeP
+  case exitCode of
+    ExitSuccess -> do
+      exp <- (fst . head . gread :: String -> TH.Exp) <$> hGetContents h
+      return $ unsafeCoerce (return exp :: TH.Q TH.Exp)
+    ExitFailure ex -> fail $ "Splice expansion failed with exit code " ++ show ex
+
+nub = nub' . sort
+  where
+    nub' (a : b : as)
+      | a == b = nub' $ a : as
+      | otherwise = a : nub' (b : as)
+    nub' as = as

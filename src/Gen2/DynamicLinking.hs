@@ -159,8 +159,10 @@ link' settings extraJs buildJs dflags batch_attempt_linking hpt
         -- make sure we link ghcjs-prim even when it's not a dependency
         let pkg_deps' | any isGhcjsPrimPackage pkg_deps = pkg_deps
                       | otherwise                       = ghcjsPrimPackage dflags : pkg_deps
-
-        link dflags obj_files pkg_deps'
+        let
+          pkgIds = map packageConfigId . eltsUFM . pkgIdMap . pkgState $ dflags
+          syb_pkg = head $ filter (isPrefixOf "syb-" . packageIdString) pkgIds
+        link dflags obj_files (syb_pkg : pkg_deps')
 
         debugTraceMsg dflags 3 (text "link: done")
 

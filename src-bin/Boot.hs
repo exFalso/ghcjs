@@ -85,7 +85,7 @@ data BootSettings = BootSettings { initTree  :: Bool      -- ^ initialize the so
                                  , gmpInTree    :: Bool       -- ^ force using the in-tree GMP
                                  , withCabal    :: Text -- ^ name of cabal executable, should be in PATH
                                  , withCompiler :: Text -- ^ name of ghcjs compiler, should be in PATH
-                                 } deriving (Ord, Eq)
+                                 } deriving (Show, Ord, Eq)
 
 adjustDefaultSettings :: BootSettings -> BootSettings
 #ifdef WINDOWS
@@ -374,6 +374,7 @@ cleanGmp = sub $ do
 
 prepareGmp :: BootSettings -> Sh ()
 prepareGmp settings = sub $ do
+  liftIO . print $ settings
   cd ("boot" </> "integer-gmp")
   intreeInstalled <- test_f ("gmp" </> "intree" </> "include" </> "gmp.h")
   when (gmpInTree settings && not intreeInstalled) $ do

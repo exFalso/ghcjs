@@ -104,6 +104,7 @@ data Deps = Deps { depsPackage  :: !Package
                  , depsBlocks   :: Array Int (Set Fun)
                  , depsDeps     :: Map Fun Int
                  }
+            deriving (Show)
 
 data ExpFun = ExpFun { isIO   :: !Bool
                      , args   :: [JSFFIType]
